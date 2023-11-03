@@ -1,7 +1,7 @@
 ### For the pure soul wishes to move it to another place
 # https://github.com/orgs/community/discussions/9050
 
-name: Testing workflow
+name: Simple job
 'on':
   workflow_call:
     inputs:
@@ -31,10 +31,6 @@ name: Testing workflow
       additional_envs:
         description: additional ENV variables to setup the job
         type: string
-      data:
-        description: ci data
-        type: string
-        required: true
       working-directory:
         description: sets custom working directory
         type: string
@@ -53,14 +49,9 @@ env:
 jobs:
   Test:
     runs-on: [self-hosted, '${{inputs.runner_type}}']
-    if: contains(fromJson(inputs.data).jobs_data.jobs_to_do, inputs.test_name)
-    name: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
+    name: ${{inputs.test_name}}
     env:
-      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 && format('-{0}',matrix.batch) || '' }}
-    strategy:
-      fail-fast: false  # we always wait for entire matrix
-      matrix:
-        batch: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].batches }}
+      GITHUB_JOB_OVERRIDDEN: ${{inputs.test_name}}
     steps:
       - name: Check out repository code
         uses: ClickHouse/checkout@v1
@@ -73,7 +64,6 @@ jobs:
       - name: Set build envs
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
-          DOCKER_TAG='${{ toJson(fromJson(inputs.data).docker_data.images) }}'
           CHECK_NAME=${{ inputs.test_name }}
           ${{inputs.additional_envs}}
           ${{secrets.secret_envs}}
@@ -82,16 +72,6 @@ jobs:
         uses: ./.github/actions/common_setup
         with:
           job_type: test
-      - name: Setup batch
-        if: ${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches > 1 }}
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          RUN_BY_HASH_NUM=${{matrix.batch}}
-          RUN_BY_HASH_TOTAL=${{ fromJson(inputs.data).jobs_data.jobs_params[inputs.test_name].num_batches }}
-          EOF
-      - name: Pre run
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --pre --job-name '${{inputs.test_name}}'
       - name: Run
         run: |
           if [ -n '${{ inputs.working-directory }}' ]; then
@@ -99,19 +79,7 @@ jobs:
           else
             cd "$GITHUB_WORKSPACE/tests/ci"
           fi
-          if [ -n '${{ inputs.run_command }}' ]; then
-            echo "Running command from workflow input"
-            ${{ inputs.run_command }}
-          else
-            echo "Running command from job config"
-            python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --run --job-name '${{inputs.test_name}}'
-          fi
-      - name: Post run
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --post --job-name '${{inputs.test_name}}'
-      - name: Mark as done
-        run: |
-          python3 "$GITHUB_WORKSPACE/tests/ci/ci.py" --infile ${{ toJson(inputs.data) }} --mark-success --job-name '${{inputs.test_name}}' --batch ${{matrix.batch}}
+          ${{ inputs.run_command }}
       - name: Clean
         if: always()
         uses: ./.github/actions/clean
